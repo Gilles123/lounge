@@ -5,7 +5,6 @@ const request = require("request");
 const url = require("url");
 const Helper = require("../../helper");
 const findLinks = require("../../../client/js/libs/handlebars/ircmessageparser/findLinks");
-const es = require("event-stream");
 const storage = require("../storage");
 
 process.setMaxListeners(0);
@@ -143,6 +142,7 @@ function emitPreview(client, msg, preview) {
 
 function fetch(uri, cb) {
 	let req;
+	let result = new Buffer(0);
 	try {
 		req = request.get({
 			url: uri,
@@ -166,18 +166,15 @@ function fetch(uri, cb) {
 			}
 		})
 		.on("error", function() {})
-		.pipe(es.map(function(data, next) {
+		.on("data", (data) => {
 			length += data.length;
 			if (length > limit) {
 				req.response.req.abort();
+			} else {
+				result = Buffer.concat([result, data]);
 			}
-			next(null, data);
-		}))
-		.pipe(es.wait(function(err, data) {
-			if (err) {
-				return cb(null);
-			}
-
+		})
+		.on("end", () => {
 			if (req.response.statusCode < 200 || req.response.statusCode > 299) {
 				return cb(null);
 			}
@@ -193,14 +190,12 @@ function fetch(uri, cb) {
 				type = req.response.headers["content-type"].split(/ *; */).shift();
 			}
 
-			data = {
-				data: data,
+			cb({
+				data: result,
 				type: type,
 				size: size
-			};
-
-			cb(data);
-		}));
+			});
+		});
 }
 
 // https://github.com/request/request/issues/2120
